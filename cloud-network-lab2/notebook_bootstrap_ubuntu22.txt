@@ -1,0 +1,11 @@
+#!/bin/bash
+sudo sed -i "/#\$nrconf{restart} = 'i';/s/.*/\$nrconf{restart} = 'a';/" /etc/needrestart/needrestart.conf
+sudo apt-get update -y && sudo apt-get upgrade -y
+sudo apt install python3 python3-pip python3-venv -y
+cd /opt
+sudo python3.10 -m venv jupyter-venv
+source jupyter-venv/bin/activate
+sudo pip install --upgrade pip
+sudo pip3 install jupyter
+sudo jupyter notebook --generate-config
+sudo jupyter notebook --port 8879 --ServerApp.ip="0.0.0.0" --allow-root

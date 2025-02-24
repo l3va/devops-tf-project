@@ -22,7 +22,14 @@ variable "ec2_volume_config" {
   }
 }
 
-variable "my_ip" {
-  description = "Public IP of local machine to apply ssh access"
+# variable "my_ip" {
+#   description = "Public IP of local machine to apply ssh access"
+#   type        = string
+# }
+
+variable "jupyter_port" {
   type        = string
+  description = "HTTP port on which Jupyter Lab service will be running"
+
+  default = "8879"
 }

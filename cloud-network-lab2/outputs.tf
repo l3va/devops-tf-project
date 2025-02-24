@@ -9,3 +9,7 @@ output "ubuntu_public_name" {
 output "ubuntu_public_os" {
   value = data.aws_ami.ubuntu22.name
 }
+
+output "jupyter_URL" {
+  value = "http://${aws_instance.public.public_ip}:${var.jupyter_port}"
+}

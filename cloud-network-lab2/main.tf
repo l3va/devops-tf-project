@@ -71,6 +71,10 @@ data "aws_ami" "ubuntu22" {
   }
 }
 
+data "template_file" "ec2_user_data" {
+  template = "${file("${path.module}/notebook_bootstrap_ubuntu22.txt")}"
+}
+
 resource "aws_instance" "public" {
   ami = data.aws_ami.ubuntu22.id
   instance_type = var.ec2_instance_type
@@ -78,6 +82,7 @@ resource "aws_instance" "public" {
   subnet_id = aws_subnet.public.id
   vpc_security_group_ids = [aws_security_group.public_web_traffic.id]
   key_name = "default-key-pair"
+  user_data = "${data.template_file.ec2_user_data.template}"
   root_block_device {
     delete_on_termination = true
     volume_size = var.ec2_volume_config.size
@@ -115,13 +120,13 @@ resource "aws_vpc_security_group_ingress_rule" "https" {
   ip_protocol = "tcp"
 }
 
-resource "aws_vpc_security_group_ingress_rule" "ssh" {
-  security_group_id = aws_security_group.public_web_traffic.id
-  cidr_ipv4 = "${var.my_ip}/32"
-  from_port = "22"
-  to_port = "22"
-  ip_protocol = "tcp"
-}
+# resource "aws_vpc_security_group_ingress_rule" "ssh" {
+#   security_group_id = aws_security_group.public_web_traffic.id
+#   cidr_ipv4 = "${var.my_ip}/32"
+#   from_port = "22"
+#   to_port = "22"
+#   ip_protocol = "tcp"
+# }
 
 resource "aws_vpc_security_group_egress_rule" "all_outbound" {
   security_group_id = aws_security_group.public_web_traffic.id
@@ -129,4 +134,12 @@ resource "aws_vpc_security_group_egress_rule" "all_outbound" {
   from_port = "0"
   to_port = "0"
   ip_protocol = "-1"
+}
+
+resource "aws_vpc_security_group_ingress_rule" "jupyter" {
+  security_group_id = aws_security_group.public_web_traffic.id
+  cidr_ipv4 = "0.0.0.0/0"
+  from_port = var.jupyter_port
+  to_port = var.jupyter_port
+  ip_protocol = "tcp"
 }
