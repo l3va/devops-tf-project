@@ -33,3 +33,24 @@ variable "jupyter_port" {
 
   default = "8879"
 }
+
+variable "prometheus_port" {
+  type        = string
+  description = "HTTP port on which Jupyter Lab service will be running"
+
+  default = "9090"
+}
+
+variable "grafana_port" {
+  type        = string
+  description = "HTTP port on which Jupyter Lab service will be running"
+
+  default = "3000"
+}
+
+variable "node_exporter_port" {
+  type        = string
+  description = "HTTP port on which Jupyter Lab service will be running"
+
+  default = "9100"
+}

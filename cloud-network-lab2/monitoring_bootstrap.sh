@@ -1,0 +1,61 @@
+#!/bin/bash
+sudo sed -i "/#\$nrconf{restart} = 'i';/s/.*/\$nrconf{restart} = 'a';/" /etc/needrestart/needrestart.conf
+sudo apt update -y
+
+# prometheus
+sudo useradd --no-create-home --shell /bin/false prometheus
+sudo mkdir /etc/prometheus
+sudo mkdir /var/lib/prometheus
+sudo chown prometheus:prometheus /var/lib/prometheus
+cd /tmp/
+wget https://github.com/prometheus/prometheus/releases/download/v2.46.0/prometheus-2.46.0.linux-amd64.tar.gz
+tar -xvf prometheus-2.46.0.linux-amd64.tar.gz
+cd prometheus-2.46.0.linux-amd64
+sudo mv console* /etc/prometheus
+sudo mv prometheus.yml /etc/prometheus
+sudo chown -R prometheus:prometheus /etc/prometheus
+sudo mv prometheus /usr/local/bin/
+sudo chown prometheus:prometheus /usr/local/bin/prometheus
+
+
+sudo cat > /etc/prometheus/prometheus.yml<<EOF
+scrape_configs:
+  - job_name: "prometheus"
+    static_configs:
+      - targets: ["localhost:9090"]
+  - job_name: "node_exporter"
+    scrape_interval: 5s
+    static_configs:
+      # - targets: ["<web_server_ip>:9100"]
+EOF
+
+sudo cat > /etc/systemd/system/prometheus.service<<EOF
+[Unit]
+Description=Prometheus
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+User=prometheus
+Group=prometheus
+Type=simple
+ExecStart=/usr/local/bin/prometheus \
+    --config.file /etc/prometheus/prometheus.yml \
+    --storage.tsdb.path /var/lib/prometheus/ \
+    --web.console.templates=/etc/prometheus/consoles \
+    --web.console.libraries=/etc/prometheus/console_libraries
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+sudo systemctl start prometheus
+sudo systemctl enable prometheus
+
+# grafana
+wget -q -O - https://packages.grafana.com/gpg.key | sudo apt-key add -
+sudo add-apt-repository "deb https://packages.grafana.com/oss/deb stable main" -y
+sudo apt update
+sudo apt install grafana -y
+sudo systemctl start grafana-server
+sudo systemctl enable grafana-server

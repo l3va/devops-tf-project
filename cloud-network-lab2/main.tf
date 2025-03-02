@@ -58,7 +58,7 @@ resource "aws_route_table_association" "public" {
 
 data "aws_ami" "ubuntu22" {
   most_recent = true
-  owners = ["amazon"]
+  owners      = ["amazon"]
 
   filter {
     name   = "name"
@@ -72,21 +72,21 @@ data "aws_ami" "ubuntu22" {
 }
 
 data "template_file" "ec2_user_data" {
-  template = "${file("${path.module}/notebook_bootstrap_ubuntu22.txt")}"
+  template = file("${path.module}/notebook_bootstrap_ubuntu22.txt")
 }
 
 resource "aws_instance" "public" {
-  ami = data.aws_ami.ubuntu22.id
-  instance_type = var.ec2_instance_type
+  ami                         = data.aws_ami.ubuntu22.id
+  instance_type               = var.ec2_instance_type
   associate_public_ip_address = true
-  subnet_id = aws_subnet.public.id
-  vpc_security_group_ids = [aws_security_group.public_web_traffic.id]
-  key_name = "default-key-pair"
-  user_data = "${data.template_file.ec2_user_data.template}"
+  subnet_id                   = aws_subnet.public.id
+  vpc_security_group_ids      = [aws_security_group.public_web_traffic.id]
+  key_name                    = "default-key-pair"
+  user_data                   = data.template_file.ec2_user_data.template
   root_block_device {
     delete_on_termination = true
-    volume_size = var.ec2_volume_config.size
-    volume_type = var.ec2_volume_config.type
+    volume_size           = var.ec2_volume_config.size
+    volume_type           = var.ec2_volume_config.type
   }
 
   tags = merge(local.common_tags, {
@@ -94,10 +94,48 @@ resource "aws_instance" "public" {
   })
 }
 
+resource "aws_instance" "private" {
+  ami           = data.aws_ami.ubuntu22.id
+  instance_type = var.ec2_instance_type
+  # associate_public_ip_address = true
+  subnet_id = aws_subnet.private.id
+  # vpc_security_group_ids = [aws_security_group.public_web_traffic.id]
+  key_name = "default-key-pair"
+  # user_data = "${data.template_file.ec2_user_data.template}"
+  root_block_device {
+    delete_on_termination = true
+    volume_size           = var.ec2_volume_config.size
+    volume_type           = var.ec2_volume_config.type
+  }
+
+  tags = merge(local.common_tags, {
+    Name = "snet-private-ubuntu"
+  })
+}
+
+resource "aws_instance" "monitoring" {
+  ami                         = data.aws_ami.ubuntu22.id
+  instance_type               = var.ec2_instance_type
+  associate_public_ip_address = true
+  subnet_id                   = aws_subnet.public.id
+  vpc_security_group_ids      = [aws_security_group.public_web_traffic.id]
+  key_name                    = "default-key-pair"
+  # user_data = "${data.template_file.ec2_user_data.template}"
+  root_block_device {
+    delete_on_termination = true
+    volume_size           = var.ec2_volume_config.size
+    volume_type           = var.ec2_volume_config.type
+  }
+
+  tags = merge(local.common_tags, {
+    Name = "snet-monitoring"
+  })
+}
+
 resource "aws_security_group" "public_web_traffic" {
   description = "Security group rule allowing traffic on ports 443 and 80"
-  name = "public_web_traffic"
-  vpc_id = aws_vpc.main.id
+  name        = "public_web_traffic"
+  vpc_id      = aws_vpc.main.id
 
   tags = merge(local.common_tags, {
     Name = "snet-sg"
@@ -106,18 +144,18 @@ resource "aws_security_group" "public_web_traffic" {
 
 resource "aws_vpc_security_group_ingress_rule" "http" {
   security_group_id = aws_security_group.public_web_traffic.id
-  cidr_ipv4 = "0.0.0.0/0"
-  from_port = "80"
-  to_port = "80"
-  ip_protocol = "tcp"
+  cidr_ipv4         = "0.0.0.0/0"
+  from_port         = "80"
+  to_port           = "80"
+  ip_protocol       = "tcp"
 }
 
 resource "aws_vpc_security_group_ingress_rule" "https" {
   security_group_id = aws_security_group.public_web_traffic.id
-  cidr_ipv4 = "0.0.0.0/0"
-  from_port = "443"
-  to_port = "443"
-  ip_protocol = "tcp"
+  cidr_ipv4         = "0.0.0.0/0"
+  from_port         = "443"
+  to_port           = "443"
+  ip_protocol       = "tcp"
 }
 
 # resource "aws_vpc_security_group_ingress_rule" "ssh" {
@@ -130,16 +168,40 @@ resource "aws_vpc_security_group_ingress_rule" "https" {
 
 resource "aws_vpc_security_group_egress_rule" "all_outbound" {
   security_group_id = aws_security_group.public_web_traffic.id
-  cidr_ipv4 = "0.0.0.0/0"
-  from_port = "0"
-  to_port = "0"
-  ip_protocol = "-1"
+  cidr_ipv4         = "0.0.0.0/0"
+  from_port         = "0"
+  to_port           = "0"
+  ip_protocol       = "-1"
 }
 
 resource "aws_vpc_security_group_ingress_rule" "jupyter" {
   security_group_id = aws_security_group.public_web_traffic.id
-  cidr_ipv4 = "0.0.0.0/0"
-  from_port = var.jupyter_port
-  to_port = var.jupyter_port
-  ip_protocol = "tcp"
+  cidr_ipv4         = "0.0.0.0/0"
+  from_port         = var.jupyter_port
+  to_port           = var.jupyter_port
+  ip_protocol       = "tcp"
+}
+
+resource "aws_vpc_security_group_ingress_rule" "prometheus" {
+  security_group_id = aws_security_group.public_web_traffic.id
+  cidr_ipv4         = "0.0.0.0/0"
+  from_port         = var.prometheus_port
+  to_port           = var.prometheus_port
+  ip_protocol       = "tcp"
+}
+
+resource "aws_vpc_security_group_ingress_rule" "grafana" {
+  security_group_id = aws_security_group.public_web_traffic.id
+  cidr_ipv4         = "0.0.0.0/0"
+  from_port         = var.grafana_port
+  to_port           = var.grafana_port
+  ip_protocol       = "tcp"
+}
+
+resource "aws_vpc_security_group_ingress_rule" "node_exporter" {
+  security_group_id = aws_security_group.public_web_traffic.id
+  cidr_ipv4         = "0.0.0.0/0"
+  from_port         = var.node_exporter_port
+  to_port           = var.node_exporter_port
+  ip_protocol       = "tcp"
 }
