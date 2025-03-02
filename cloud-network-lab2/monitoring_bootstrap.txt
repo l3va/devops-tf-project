@@ -1,4 +1,5 @@
 #!/bin/bash
+WEB_SERVER_IP=${web_server_ip}
 sudo sed -i "/#\$nrconf{restart} = 'i';/s/.*/\$nrconf{restart} = 'a';/" /etc/needrestart/needrestart.conf
 sudo apt update -y
 
@@ -26,7 +27,7 @@ scrape_configs:
   - job_name: "node_exporter"
     scrape_interval: 5s
     static_configs:
-      # - targets: ["<web_server_ip>:9100"]
+      - targets: ["$WEB_SERVER_IP:9100"]
 EOF
 
 sudo cat > /etc/systemd/system/prometheus.service<<EOF

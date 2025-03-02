@@ -75,6 +75,14 @@ data "template_file" "ec2_user_data" {
   template = file("${path.module}/notebook_bootstrap_ubuntu22.txt")
 }
 
+data "template_file" "ec2_monitoring_user_data" {
+  template = templatefile("${path.module}/monitoring_bootstrap.txt", {web_server_ip = aws_instance.public.public_ip})
+}
+
+data "template_file" "ec2_node_exporter_user_data" {
+  template = file("${path.module}/node_exporter_bootstrap.txt")
+}
+
 resource "aws_instance" "public" {
   ami                         = data.aws_ami.ubuntu22.id
   instance_type               = var.ec2_instance_type
@@ -82,7 +90,9 @@ resource "aws_instance" "public" {
   subnet_id                   = aws_subnet.public.id
   vpc_security_group_ids      = [aws_security_group.public_web_traffic.id]
   key_name                    = "default-key-pair"
-  user_data                   = data.template_file.ec2_user_data.template
+  # user_data                   = data.template_file.ec2_user_data.template
+  user_data                   = data.template_file.ec2_node_exporter_user_data.template
+
   root_block_device {
     delete_on_termination = true
     volume_size           = var.ec2_volume_config.size
@@ -121,11 +131,14 @@ resource "aws_instance" "monitoring" {
   vpc_security_group_ids      = [aws_security_group.public_web_traffic.id]
   key_name                    = "default-key-pair"
   # user_data = "${data.template_file.ec2_user_data.template}"
+  user_data                   = data.template_file.ec2_monitoring_user_data.template
   root_block_device {
     delete_on_termination = true
     volume_size           = var.ec2_volume_config.size
     volume_type           = var.ec2_volume_config.type
   }
+
+  depends_on = [aws_instance.public]
 
   tags = merge(local.common_tags, {
     Name = "snet-monitoring"
@@ -157,14 +170,6 @@ resource "aws_vpc_security_group_ingress_rule" "https" {
   to_port           = "443"
   ip_protocol       = "tcp"
 }
-
-# resource "aws_vpc_security_group_ingress_rule" "ssh" {
-#   security_group_id = aws_security_group.public_web_traffic.id
-#   cidr_ipv4 = "${var.my_ip}/32"
-#   from_port = "22"
-#   to_port = "22"
-#   ip_protocol = "tcp"
-# }
 
 resource "aws_vpc_security_group_egress_rule" "all_outbound" {
   security_group_id = aws_security_group.public_web_traffic.id
@@ -204,4 +209,16 @@ resource "aws_vpc_security_group_ingress_rule" "node_exporter" {
   from_port         = var.node_exporter_port
   to_port           = var.node_exporter_port
   ip_protocol       = "tcp"
+}
+
+data "http" "myip" {
+  url = "https://ipv4.icanhazip.com"
+}
+
+resource "aws_vpc_security_group_ingress_rule" "ssh" {
+  security_group_id = aws_security_group.public_web_traffic.id
+  cidr_ipv4 = "${chomp(data.http.myip.response_body)}/32"
+  from_port = "22"
+  to_port = "22"
+  ip_protocol = "tcp"
 }

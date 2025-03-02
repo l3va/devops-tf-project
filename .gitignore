@@ -38,3 +38,4 @@ terraform.rc
 
 .env
 *.pem
+.terraform.lock.hcl
