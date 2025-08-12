@@ -13,3 +13,11 @@ output "ubuntu_public_os" {
 output "jupyter_URL" {
   value = "http://${aws_instance.public.public_ip}:${var.jupyter_port}"
 }
+
+output "prometheus_URL" {
+  value = "http://${aws_instance.monitoring.public_ip}:${var.prometheus_port}"
+}
+
+output "grafana_URL" {
+  value = "http://${aws_instance.monitoring.public_ip}:${var.grafana_port}"
+}

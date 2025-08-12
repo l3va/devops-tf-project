@@ -76,7 +76,7 @@ data "template_file" "ec2_user_data" {
 }
 
 data "template_file" "ec2_monitoring_user_data" {
-  template = templatefile("${path.module}/monitoring_bootstrap.txt", {web_server_ip = aws_instance.public.public_ip})
+  template = templatefile("${path.module}/monitoring_bootstrap.txt", { web_server_ip = aws_instance.public.public_ip })
 }
 
 data "template_file" "ec2_node_exporter_user_data" {
@@ -91,7 +91,7 @@ resource "aws_instance" "public" {
   vpc_security_group_ids      = [aws_security_group.public_web_traffic.id]
   key_name                    = "default-key-pair"
   # user_data                   = data.template_file.ec2_user_data.template
-  user_data                   = data.template_file.ec2_node_exporter_user_data.template
+  user_data = data.template_file.ec2_node_exporter_user_data.template
 
   root_block_device {
     delete_on_termination = true
@@ -131,7 +131,7 @@ resource "aws_instance" "monitoring" {
   vpc_security_group_ids      = [aws_security_group.public_web_traffic.id]
   key_name                    = "default-key-pair"
   # user_data = "${data.template_file.ec2_user_data.template}"
-  user_data                   = data.template_file.ec2_monitoring_user_data.template
+  user_data = data.template_file.ec2_monitoring_user_data.template
   root_block_device {
     delete_on_termination = true
     volume_size           = var.ec2_volume_config.size
@@ -174,9 +174,9 @@ resource "aws_vpc_security_group_ingress_rule" "https" {
 resource "aws_vpc_security_group_egress_rule" "all_outbound" {
   security_group_id = aws_security_group.public_web_traffic.id
   cidr_ipv4         = "0.0.0.0/0"
-  from_port         = "0"
-  to_port           = "0"
-  ip_protocol       = "-1"
+  # from_port         = "0"
+  # to_port           = "0"
+  ip_protocol = "-1"
 }
 
 resource "aws_vpc_security_group_ingress_rule" "jupyter" {
@@ -217,8 +217,8 @@ data "http" "myip" {
 
 resource "aws_vpc_security_group_ingress_rule" "ssh" {
   security_group_id = aws_security_group.public_web_traffic.id
-  cidr_ipv4 = "${chomp(data.http.myip.response_body)}/32"
-  from_port = "22"
-  to_port = "22"
-  ip_protocol = "tcp"
+  cidr_ipv4         = "${chomp(data.http.myip.response_body)}/32"
+  from_port         = "22"
+  to_port           = "22"
+  ip_protocol       = "tcp"
 }

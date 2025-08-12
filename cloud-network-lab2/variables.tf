@@ -1,7 +1,7 @@
 variable "ec2_instance_type" {
   type        = string
   description = "The type of managed EC2 instances"
-  default = "t2.micro"
+  default     = "t2.micro"
 }
 
 variable "ec2_volume_config" {
