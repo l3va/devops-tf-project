@@ -24,3 +24,42 @@ EOF
 sudo systemctl daemon-reload
 sudo systemctl start node_exporter
 sudo systemctl enable node_exporter
+
+
+set -euxo pipefail
+
+REGION="eu-central-1"
+IMAGE="835955484226.dkr.ecr.eu-central-1.amazonaws.com/nebo_namespace/custom_images:1.0"
+CONTAINER_NAME="custom-nginx"
+
+# Update OS
+apt-get update -y
+
+# Install Docker + AWS CLI
+apt-get install -y docker.io awscli curl
+
+# Enable and start Docker
+systemctl enable docker
+systemctl start docker
+
+# (Optional) allow ec2-user to run docker without sudo
+usermod -aG docker ec2-user || true
+
+# Login to ECR
+aws ecr get-login-password --region "$REGION" \
+  | docker login --username AWS --password-stdin "835955484226.dkr.ecr.$REGION.amazonaws.com"
+
+# Pull image
+docker pull "$IMAGE"
+
+# Stop old container if exists
+if docker ps -a --format '{{.Names}}' | grep -qx "$CONTAINER_NAME"; then
+  docker rm -f "$CONTAINER_NAME"
+fi
+
+# Run container (nginx listens on 80)
+docker run -d \
+  --name "$CONTAINER_NAME" \
+  --restart unless-stopped \
+  -p 80:80 \
+  "$IMAGE"

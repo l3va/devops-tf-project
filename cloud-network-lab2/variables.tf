@@ -43,3 +43,13 @@ variable "node_exporter_port" {
 
   default = "9100"
 }
+
+variable "aws_region" {
+  type    = string
+  default = "eu-central-1"
+}
+
+variable "name_prefix" {
+  type    = string
+  default = "custom-nginx"
+}

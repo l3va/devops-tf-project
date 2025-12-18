@@ -83,6 +83,28 @@ data "template_file" "ec2_node_exporter_user_data" {
   template = file("${path.module}/node_exporter_bootstrap.txt")
 }
 
+
+# AWS managed policy that grants read-only access to ECR repositories
+resource "aws_iam_role_policy_attachment" "ecr_readonly" {
+  role       = aws_iam_role.ec2_ecr_readonly.name
+  policy_arn = "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly"
+}
+
+resource "aws_iam_instance_profile" "ec2_profile" {
+  name = "${var.name_prefix}-instance-profile"
+  role = aws_iam_role.ec2_ecr_readonly.name
+}
+
+output "instance_profile_name" {
+  value = aws_iam_instance_profile.ec2_profile.name
+}
+
+output "role_name" {
+  value = aws_iam_role.ec2_ecr_readonly.name
+}
+# adding roles for EC2 instance to be able to pull from ECR - finish
+
+
 resource "aws_instance" "public" {
   ami                         = data.aws_ami.ubuntu22.id
   instance_type               = var.ec2_instance_type
@@ -90,8 +112,9 @@ resource "aws_instance" "public" {
   subnet_id                   = aws_subnet.public.id
   vpc_security_group_ids      = [aws_security_group.public_web_traffic.id]
   key_name                    = "default-key-pair"
+  iam_instance_profile = aws_iam_instance_profile.ec2_profile.name
   # user_data                   = data.template_file.ec2_user_data.template
-  user_data = data.template_file.ec2_node_exporter_user_data.template
+  user_data = data.template_file.ec2_node_exporter_user_data.rendered
 
   root_block_device {
     delete_on_termination = true
@@ -249,3 +272,24 @@ resource "aws_vpc_security_group_ingress_rule" "ssh" {
   to_port           = "22"
   ip_protocol       = "tcp"
 }
+
+
+
+# adding roles for EC2 instance to be able to pull from ECR
+data "aws_iam_policy_document" "ec2_assume_role" {
+  statement {
+    effect  = "Allow"
+    actions = ["sts:AssumeRole"]
+
+    principals {
+      type        = "Service"
+      identifiers = ["ec2.amazonaws.com"]
+    }
+  }
+}
+
+resource "aws_iam_role" "ec2_ecr_readonly" {
+  name               = "${var.name_prefix}-ec2-ecr-readonly"
+  assume_role_policy = data.aws_iam_policy_document.ec2_assume_role.json
+}
+
