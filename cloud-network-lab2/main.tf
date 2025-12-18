@@ -222,3 +222,76 @@ resource "aws_vpc_security_group_ingress_rule" "ssh" {
   to_port           = "22"
   ip_protocol       = "tcp"
 }
+
+
+
+# jenkins
+resource "aws_instance" "jenkins_server" {
+  ami           = data.aws_ami.amzn2.id       # Amazon Linux 2 latest AMI  
+  instance_type = "t3.small"  
+  subnet_id     = var.public_subnet_id        # use existing subnet from VPC  
+  security_groups = [aws_security_group.jenkins_sg.id]  
+  iam_instance_profile = aws_iam_instance_profile.jenkins_profile.id  
+  user_data = file("${path.module}/install_jenkins_docker.sh") 
+  tags = { Name = "JenkinsServer" }
+}
+
+# docker
+resource "aws_ecr_repository" "nginx_app_repo" {
+  name                 = "nginx-app-repo"
+  image_scanning_configuration = { scan_on_push = true }
+  encryption_configuration    = { encryption_type = "AES256" }
+  tags = { Name = "NginxAppRepo" }
+}
+
+resource "aws_ecs_cluster" "devops_cluster" {
+  name = "devops-ecs-cluster"
+  tags = { Name = "DevOpsECSCluster" }
+}
+
+resource "aws_iam_role" "ecs_task_role" {
+  name = "ecsTaskExecutionRole"
+  assume_role_policy = data.aws_iam_policy_document.ecs_task_assume.json
+}
+resource "aws_iam_role_policy_attachment" "ecs_task_ecr" {
+  role       = aws_iam_role.ecs_task_role.name
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
+}
+
+resource "aws_ecs_task_definition" "nginx_task" {
+  family                   = "nginx-app-task"
+  network_mode             = "awsvpc"
+  requires_compatibilities = ["FARGATE"]
+  cpu                      = "256"                      # 0.25 vCPU
+  memory                   = "512"                      # 0.5 GB
+  execution_role_arn       = aws_iam_role.ecs_task_role.arn
+  container_definitions    = jsonencode([
+    {
+      name      = "nginx-app",
+      image     = "${aws_ecr_repository.nginx_app_repo.repository_url}:${var.app_image_tag}",
+      portMappings = [
+        { containerPort = 80, hostPort = 80, protocol = "tcp" }
+      ],
+      essential = true
+    }
+  ])
+}
+
+resource "aws_ecs_service" "nginx_service" {
+  name            = "nginx-app-service"
+  cluster         = aws_ecs_cluster.devops_cluster.id
+  task_definition = aws_ecs_task_definition.nginx_task.arn  # initial task def
+  launch_type     = "FARGATE"
+  desired_count   = 1
+  network_configuration {
+    subnets          = var.private_subnets  # run tasks in private subnets
+    security_groups  = [aws_security_group.nginx_task_sg.id] 
+    assign_public_ip = false  # use false if behind ALB in private subnets
+  }
+  load_balancer { 
+    target_group_arn = aws_lb_target_group.nginx_tg.arn
+    container_name   = "nginx-app"
+    container_port   = 80
+  }
+  depends_on = [aws_lb_listener.http]  # ensure LB listener created first
+}

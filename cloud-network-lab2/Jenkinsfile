@@ -1,0 +1,61 @@
+pipeline {
+  agent { label 'master' }  // run on Jenkins master (which has Docker & AWS CLI)
+  environment {
+      AWS_REGION = "eu-central-1"
+      ECR_URL    = "<AWS_ACCOUNT_ID>.dkr.ecr.eu-central-1.amazonaws.com"
+      APP_REPO   = "nginx-app-repo"
+  }
+  stages {
+    stage('Build') {
+      steps {
+        echo "Building application (if any build step needed)"
+        // If there is application code (e.g. Python), compile or package it here
+      }
+    }
+    stage('Test') {
+      steps {
+        echo "Running tests..."
+        // Run unit tests or linting for the app code here.
+        // e.g., sh 'pytest' if a Python project with tests
+        // For a static site, we might skip or perform a simple syntax check.
+      }
+    }
+    stage('Docker Build & Push') {
+      steps {
+        script {
+          sh """
+            docker build -t $APP_REPO:latest .
+            aws ecr get-login-password --region $AWS_REGION | \\
+                docker login --username AWS --password-stdin $ECR_URL
+            docker tag $APP_REPO:latest $ECR_URL/$APP_REPO:${env.BUILD_NUMBER}
+            docker push $ECR_URL/$APP_REPO:${env.BUILD_NUMBER}
+          """
+        }
+      }
+    }
+    stage('Deploy to ECS') {
+      steps {
+        script {
+          // Update ECS service with new image via AWS CLI
+          sh """
+            # Register new task definition revision with updated image
+            NEW_IMAGE="$ECR_URL/$APP_REPO:${env.BUILD_NUMBER}"
+            TASK_FAMILY="nginx-app-task"
+            # Get current task definition JSON, replace image, remove fields that AWS doesn't want on register
+            aws ecs describe-task-definition --task-definition $TASK_FAMILY > current_task.json
+            cat current_task.json | jq --arg IMAGE "$NEW_IMAGE" '.taskDefinition 
+              | .containerDefinitions[0].image = $IMAGE 
+              | del(.revision, .status, .taskDefinitionArn, .requiresAttributes, .compatibilities, .registeredBy, .registeredAt)' \
+              > new_task_def.json
+            # Register new task definition revision
+            NEW_TASK_DEF_ARN=$(aws ecs register-task-definition --cli-input-json file://new_task_def.json --query "taskDefinition.taskDefinitionArn" --output text)
+            # Update ECS service to use the new task definition
+            aws ecs update-service --cluster ${cluster_name} --service ${service_name} --task-definition $NEW_TASK_DEF_ARN --force-new-deployment
+            aws ecs wait services-stable --cluster ${cluster_name} --service ${service_name}
+          """
+        }
+        echo "Deployment triggered. Awaiting service stabilization..."
+      }
+    }
+  }
+}
