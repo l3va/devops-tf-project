@@ -226,22 +226,101 @@ resource "aws_vpc_security_group_ingress_rule" "ssh" {
 
 
 # jenkins
+data "aws_ami" "amzn2" {
+  most_recent = true
+  owners      = ["amazon"]              
+  filter {
+    name   = "name"
+    values = ["amzn2-ami-hvm-*-x86_64-gp2"]  
+  }
+  filter {
+    name   = "virtualization-type"
+    values = ["hvm"]
+  }
+}
+
 resource "aws_instance" "jenkins_server" {
   ami           = data.aws_ami.amzn2.id       # Amazon Linux 2 latest AMI  
   instance_type = "t3.small"  
-  subnet_id     = var.public_subnet_id        # use existing subnet from VPC  
+  subnet_id     = aws_subnet.public.id        # use existing subnet from VPC  
   security_groups = [aws_security_group.jenkins_sg.id]  
   iam_instance_profile = aws_iam_instance_profile.jenkins_profile.id  
   user_data = file("${path.module}/install_jenkins_docker.sh") 
   tags = { Name = "JenkinsServer" }
 }
 
+# Security Group для Jenkins-сервера
+resource "aws_security_group" "jenkins_sg" {
+  name        = "jenkins_sg"
+  description = "Allow Jenkins server traffic"
+  vpc_id      = aws_vpc.main.id    # наприклад, var.vpc_id або конкретний VPC
+
+  ingress {
+    description = "Jenkins UI port"
+    from_port   = 8080
+    to_port     = 8080
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]   
+  }
+
+  ingress {
+    description = "SSH access"
+    from_port   = 22
+    to_port     = 22
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]    # замініть на свій адміністр. IP діапазон
+  }
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  tags = {
+    Name = "Jenkins-SG"
+  }
+}
+
+data "aws_iam_policy_document" "jenkins_assume" {
+  statement {
+    effect  = "Allow"
+    actions = ["sts:AssumeRole"]
+    principals {
+      type        = "Service"
+      identifiers = ["ec2.amazonaws.com"]
+    }
+  }
+}
+
+resource "aws_iam_role" "jenkins_role" {
+  name               = "jenkins-role"
+  assume_role_policy = data.aws_iam_policy_document.jenkins_assume.json
+}
+
+resource "aws_iam_instance_profile" "jenkins_profile" {
+  name = "jenkins-instance-profile"
+  role = aws_iam_role.jenkins_role.name
+}
+
+
 # docker
 resource "aws_ecr_repository" "nginx_app_repo" {
-  name                 = "nginx-app-repo"
-  image_scanning_configuration = { scan_on_push = true }
-  encryption_configuration    = { encryption_type = "AES256" }
-  tags = { Name = "NginxAppRepo" }
+  name                 = "nginx-app-repo"               # ім'я репозиторію (припущення)
+  image_tag_mutability = "MUTABLE"                      # чи дозволено перезапис тэгів (опціонально)
+
+  image_scanning_configuration {
+    scan_on_push = true
+  }
+
+  encryption_configuration {
+    encryption_type = "AES256"
+  }
+
+  tags = {
+    Name = "nginx-app-repo"
+  }
 }
 
 resource "aws_ecs_cluster" "devops_cluster" {
@@ -284,8 +363,8 @@ resource "aws_ecs_service" "nginx_service" {
   launch_type     = "FARGATE"
   desired_count   = 1
   network_configuration {
-    subnets          = var.private_subnets  # run tasks in private subnets
-    security_groups  = [aws_security_group.nginx_task_sg.id] 
+    subnets          = [aws_subnet.public.id]  # run tasks in private subnets
+    security_groups  = [aws_security_group.public_web_traffic.id] 
     assign_public_ip = false  # use false if behind ALB in private subnets
   }
   load_balancer { 
@@ -295,3 +374,68 @@ resource "aws_ecs_service" "nginx_service" {
   }
   depends_on = [aws_lb_listener.http]  # ensure LB listener created first
 }
+
+data "aws_iam_policy_document" "ecs_task_assume" {
+  statement {
+    actions = ["sts:AssumeRole"]
+    effect  = "Allow"
+    principals {
+      type        = "Service"
+      identifiers = ["ecs-tasks.amazonaws.com"]
+    }
+  }
+}
+
+# resource "aws_iam_role" "ecs_task_role" {
+#   name               = "ecs-task-role"
+#   assume_role_policy = data.aws_iam_policy_document.ecs_task_assume.json
+# }
+
+# Application Load Balancer для nginx (веб застосунку)
+resource "aws_lb" "nginx_alb" {
+  name               = "nginx-alb"
+  internal           = false                      # false = зовнішній ALB, доступний з інтернету
+  load_balancer_type = "application"
+  subnets            = [aws_subnet.public.id]  # список хоча б двох subnet-ів в різних AZ
+
+  security_groups    = [aws_security_group.public_web_traffic.id]  # наприклад, SG для ALB (дозволяє 80/443)
+  enable_deletion_protection = false            # відключає захист від видалення (опціонально)
+
+  tags = {
+    Name = "nginx-app-ALB"
+  }
+}
+
+resource "aws_lb_target_group" "nginx_tg" {
+  name     = "nginx-target-group"
+  port     = 80
+  protocol = "HTTP"
+  target_type = "ip"
+  vpc_id     = aws_vpc.main.id
+
+  health_check {
+    path                = "/"
+    interval            = 30
+    timeout             = 5
+    healthy_threshold   = 2
+    unhealthy_threshold = 2
+    matcher             = "200"
+  }
+
+  tags = {
+    Name = "nginx-tg"
+  }
+}
+
+resource "aws_lb_listener" "http" {
+  load_balancer_arn = aws_lb.nginx_alb.arn
+  port              = 80
+  protocol          = "HTTP"
+
+  default_action {
+    type             = "forward"
+    target_group_arn = aws_lb_target_group.nginx_tg.arn
+  }
+}
+
+

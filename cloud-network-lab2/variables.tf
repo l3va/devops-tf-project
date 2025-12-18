@@ -43,3 +43,9 @@ variable "node_exporter_port" {
 
   default = "9100"
 }
+
+variable "app_image_tag" {
+  description = "Docker image tag for nginx app"
+  type        = string
+  default     = "latest" 
+}
