@@ -54,9 +54,109 @@ sudo systemctl start prometheus
 sudo systemctl enable prometheus
 
 # grafana
+
+
+
+
+#!/bin/bash
+set -e
+
+# --- Install Grafana ---
 wget -q -O - https://packages.grafana.com/gpg.key | sudo apt-key add -
 sudo add-apt-repository "deb https://packages.grafana.com/oss/deb stable main" -y
 sudo apt update
 sudo apt install grafana -y
-sudo systemctl start grafana-server
 sudo systemctl enable grafana-server
+
+# --- Create provisioning directories ---
+mkdir -p /etc/grafana/provisioning/datasources
+mkdir -p /etc/grafana/provisioning/dashboards
+mkdir -p /etc/grafana/provisioning/dashboards-json
+
+# --- Configure Prometheus datasource ---
+cat <<EOF > /etc/grafana/provisioning/datasources/prometheus.yaml
+apiVersion: 1
+datasources:
+  - name: Prometheus
+    type: prometheus
+    access: proxy
+    url: http://localhost:9090
+    isDefault: true
+EOF
+
+# --- Configure dashboards provisioning ---
+cat <<EOF > /etc/grafana/provisioning/dashboards/system.yaml
+apiVersion: 1
+providers:
+  - name: 'System Dashboards'
+    folder: 'System Monitoring'
+    type: file
+    options:
+      path: /etc/grafana/provisioning/dashboards-json
+EOF
+
+# --- Sample dashboard with Prometheus metrics ---
+cat <<'EOF' > /etc/grafana/provisioning/dashboards-json/system-metrics.json
+{
+  "id": null,
+  "title": "System Metrics",
+  "tags": ["infra"],
+  "timezone": "browser",
+  "schemaVersion": 30,
+  "version": 1,
+  "refresh": "30s",
+  "panels": [
+    {
+      "type": "graph",
+      "title": "CPU Utilization",
+      "datasource": "Prometheus",
+      "targets": [{
+        "expr": "100 - (avg by (instance) (rate(node_cpu_seconds_total{mode=\"idle\"}[5m])) * 100)",
+        "legendFormat": "{{instance}}"
+      }],
+      "gridPos": { "x": 0, "y": 0, "w": 12, "h": 8 }
+    },
+    {
+      "type": "graph",
+      "title": "Memory Utilization",
+      "datasource": "Prometheus",
+      "targets": [{
+        "expr": "(1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100",
+        "legendFormat": "{{instance}}"
+      }],
+      "gridPos": { "x": 12, "y": 0, "w": 12, "h": 8 }
+    },
+    {
+      "type": "graph",
+      "title": "Disk Read/Write",
+      "datasource": "Prometheus",
+      "targets": [{
+        "expr": "rate(node_disk_reads_completed_total[5m])",
+        "legendFormat": "Reads - {{device}}"
+      },{
+        "expr": "rate(node_disk_writes_completed_total[5m])",
+        "legendFormat": "Writes - {{device}}"
+      }],
+      "gridPos": { "x": 0, "y": 8, "w": 12, "h": 8 }
+    },
+    {
+      "type": "graph",
+      "title": "Network Throughput",
+      "datasource": "Prometheus",
+      "targets": [{
+        "expr": "rate(node_network_receive_bytes_total[5m])",
+        "legendFormat": "In - {{device}}"
+      },{
+        "expr": "rate(node_network_transmit_bytes_total[5m])",
+        "legendFormat": "Out - {{device}}"
+      }],
+      "gridPos": { "x": 12, "y": 8, "w": 12, "h": 8 }
+    }
+  ]
+}
+EOF
+
+# --- Start Grafana (after provisioning is ready) ---
+systemctl restart grafana-server
+
+
